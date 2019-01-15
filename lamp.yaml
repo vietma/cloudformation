@@ -1,0 +1,97 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: LAMP template
+Parameters:
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+  InstanceType:
+    Type: String
+    Default: t2.micro
+  Vpc:
+    Type: AWS::EC2::VPC::Id
+  DBRootPassword:
+    Type: String
+    NoEcho: true
+    MinLength: 8
+    MaxLength: 41
+    Description: Root password for MySQL
+
+Resources:
+  WebServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable HTTP access via port 80
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+      VpcId: !Ref Vpc
+  WebServer:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: ami-09b42976632b27e9b
+      KeyName: !Ref KeyName
+      SecurityGroupIds:
+        - !Ref WebServerSecurityGroup
+      UserData: # very important
+        "Fn::Base64": !Sub |
+          #!/bin/bash -ex
+          /opt/aws/bin/cfn-init --stack ${AWS::StackName} --resource WebServer --configsets install-and-init --region ${AWS::Region}
+          chmod a+r /var/www/html/index.php
+
+          # Setup MySQL, create a user and a database
+          mysqladmin -u root password ${DBRootPassword}
+          mysql -u root --password='${DBRootPassword}' < /tmp/setup.mysql
+
+          # Configure the PHP application - in this case, fixup the page with the right references to the database
+          sed -i 's/REPLACE_WITH_DATABASE/localhost/g' /var/www/html/index.php
+          sed -i 's/REPLACE_WITH_DBUSER/root/g' /var/www/html/index.php
+          sed -i 's/REPLACE_WITH_DBPASSWORD/${DBRootPassword}/g' /var/www/html/index.php
+
+    Metadata:
+      AWS::CloudFormation::Init:
+        configSets:
+          install-and-init:
+            - install-packages
+            - service-init
+        install-packages:
+          packages:
+            yum:
+              httpd: []
+              php: []
+              mysql: []
+              mysql-server: []
+              mysql-libs: []
+              php-mysql: []
+        service-init:
+          sources:
+            /var/www/html: "https://s3.amazonaws.com/cloudformation-examples/CloudFormationPHPSample.zip"
+          files:
+            "/var/www/html/index.html":
+              content: "<html><body>Hello World!</body></html>"
+              mode: "000644"
+              owner: root
+              group: root
+            "/tmp/setup.mysql":
+              content: "CREATE DATABASE lampdb;\n"
+              mode: "000644"
+              owner: root
+              group: root
+          services:
+            sysvinit:
+              httpd:
+                enabled: true
+                ensureRunning: true
+              mysqld:
+                enabled: true
+                ensureRunning: true
+
+Outputs:
+  WebsiteURL:
+    Description: Visit the HTTP site over here
+    Value: !Sub http://${WebServer.PublicDnsName}/index.php

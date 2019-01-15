@@ -1,0 +1,66 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: WordPress single instance template
+Parameters:
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+  InstanceType:
+    Type: String
+    Default: t2.micro
+  Vpc:
+    Type: AWS::EC2::VPC::Id
+
+Resources:
+  WebServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable HTTP access via port 80
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+      VpcId: !Ref Vpc
+  WebServer:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: ami-09b42976632b27e9b
+      KeyName: !Ref KeyName
+      SecurityGroupIds:
+        - !Ref WebServerSecurityGroup
+      UserData: # very important
+        "Fn::Base64": !Sub |
+          #!/bin/bash -ex
+          /opt/aws/bin/cfn-init --stack ${AWS::StackName} --resource WebServer --configsets install-and-init --region ${AWS::Region}
+    Metadata:
+      AWS::CloudFormation::Init:
+        configSets:
+          install-and-init:
+            - install-packages
+            - service-init
+        install-packages:
+          packages:
+            yum:
+              httpd: []
+              php: []
+        service-init:
+          files:
+            "/var/www/html/index.php":
+              content: "<?php phpinfo(); ?>"
+              mode: "000644"
+              owner: root
+              group: root
+          services:
+            sysvinit:
+              httpd:
+                enabled: true
+                ensureRunning: true
+
+Outputs:
+  WebsiteURL:
+    Description: Visit the HTTP site over here
+    Value: !Sub http://${WebServer.PublicDnsName}/index.php

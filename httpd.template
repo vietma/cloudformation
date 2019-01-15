@@ -1,0 +1,145 @@
+{
+  "Description": "Bring up an EC2 that runs apache HTTP server",
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Parameters":
+    {
+      "InstanceType":
+        {
+          "Description": "EC2 instance type",
+          "Type": "String",
+          "Default": "t2.micro",
+        },
+      "InstanceAMI":
+        {
+          "Description": "EC2 AMI (default to eu-west-2 Amazon Linux 2 LTS Candidate 2)",
+          "Type": "AWS::EC2::Image::Id",
+          "Default": "ami-09b42976632b27e9b",
+        },
+      "VPC": { "Description": "VPC ID", "Type": "AWS::EC2::VPC::Id" },
+      "Subnet": { "Description": "VPC subnet", "Type": "String" },
+      "KeyName":
+        {
+          "Description": "Key pair for SSH access",
+          "Type": "AWS::EC2::KeyPair::KeyName",
+        },
+    },
+  "Resources":
+    {
+      "ServerSecurityGroup":
+        {
+          "Type": "AWS::EC2::SecurityGroup",
+          "Properties":
+            {
+              "GroupDescription": "Allow public access to HTTP and SSH",
+              "SecurityGroupIngress":
+                [
+                  {
+                    "IpProtocol": "tcp",
+                    "FromPort": "80",
+                    "ToPort": "80",
+                    "CidrIp": "0.0.0.0/0",
+                  },
+                  {
+                    "IpProtocol": "tcp",
+                    "FromPort": "22",
+                    "ToPort": "22",
+                    "CidrIp": "0.0.0.0/0",
+                  },
+                ],
+              "VpcId": { "Ref": "VPC" },
+            },
+          "Metadata": {},
+        },
+      "ServerStaticIP":
+        {
+          "Type": "AWS::EC2::EIP",
+          "Properties": { "InstanceId": { "Ref": "ServerEC2" } },
+        },
+      "ServerEC2":
+        {
+          "Type": "AWS::EC2::Instance",
+          "Properties":
+            {
+              "InstanceType": { "Ref": "InstanceType" },
+              "SecurityGroupIds": [{ "Ref": "ServerSecurityGroup" }],
+              "KeyName": { "Ref": "KeyName" },
+              "ImageId": { "Ref": "InstanceAMI" },
+              "SubnetId": { "Ref": "Subnet" },
+              "UserData":
+                {
+                  "Fn::Base64":
+                    {
+                      "Fn::Join":
+                        [
+                          "",
+                          [
+                            "#!/bin/bash -xe\n",
+                            "/opt/aws/bin/cfn-init -v ",
+                            "         --stack ",
+                            { "Ref": "AWS::StackName" },
+                            "         --resource ServerEC2",
+                            "         --configsets install-and-init",
+                            "         --region ",
+                            { "Ref": "AWS::Region" },
+                            "\n",
+                          ],
+                        ],
+                    },
+                },
+            },
+          "Metadata":
+            {
+              "AWS::CloudFormation::Init":
+                {
+                  "configSets":
+                    {
+                      "install-and-init":
+                        ["install-pkgs", "service-init", "finalise"],
+                    },
+                  "install-pkgs": { "packages": { "yum": { "httpd": [] } } },
+                  "service-init":
+                    {
+                      "files":
+                        {
+                          "/var/www/html/index.html":
+                            {
+                              "content": "Hello there",
+                              "mode": "000644",
+                              "owner": "root",
+                              "group": "root",
+                            },
+                        },
+                      "services":
+                        {
+                          "sysvinit":
+                            {
+                              "httpd":
+                                { "enabled": "true", "ensureRunning": "true" },
+                            },
+                        },
+                    },
+                  "finalise":
+                    {
+                      "commands":
+                        {
+                          "touch-a-file":
+                            { "command": "touch /root/cloudformation-done" },
+                        },
+                    },
+                },
+            },
+        },
+    },
+  "Outputs":
+    {
+      "WebsiteURL":
+        {
+          "Description": "Visit the HTTP site over here",
+          "Value":
+            {
+              "Fn::Join":
+                ["", ["http://", { "Fn::GetAtt": ["ServerEC2", "PublicIp"] }]],
+            },
+        },
+    },
+}
