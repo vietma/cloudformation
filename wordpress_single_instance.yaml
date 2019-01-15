@@ -8,6 +8,19 @@ Parameters:
     Default: t2.micro
   Vpc:
     Type: AWS::EC2::VPC::Id
+  DBRootPassword:
+    Type: String
+    NoEcho: true
+    MinLength: 8
+    MaxLength: 41
+    Description: Root password for MySQL
+  DBName:
+    Type: String
+  DBUser:
+    Type: String
+  DBPassword:
+    Type: String
+    NoEcho: true
 
 Resources:
   WebServerSecurityGroup:
@@ -23,22 +36,30 @@ Resources:
           FromPort: 22
           ToPort: 22
           CidrIp: 0.0.0.0/0
-      VpcId:
-        Ref: Vpc
+      VpcId: !Ref Vpc
   WebServer:
     Type: AWS::EC2::Instance
     Properties:
-      InstanceType:
-        Ref: InstanceType
+      InstanceType: !Ref InstanceType
       ImageId: ami-09b42976632b27e9b
-      KeyName:
-        Ref: KeyName
+      KeyName: !Ref KeyName
       SecurityGroupIds:
-        - Ref: WebServerSecurityGroup
+        - !Ref WebServerSecurityGroup
       UserData: # very important
         "Fn::Base64": !Sub |
           #!/bin/bash -ex
           /opt/aws/bin/cfn-init --stack ${AWS::StackName} --resource WebServer --configsets install-and-init --region ${AWS::Region}
+          chmod a+r /var/www/html/index.php
+
+          # Setup MySQL, create a user and a database
+          mysqladmin -u root password ${DBRootPassword}
+          mysql -u root --password='${DBRootPassword}' < /tmp/setup.mysql
+
+          # Configure the PHP application - in this case, fixup the page with the right references to the database
+          sed -i 's/REPLACE_WITH_DATABASE/localhost/g' /var/www/html/index.php
+          sed -i 's/REPLACE_WITH_DBUSER/root/g' /var/www/html/index.php
+          sed -i 's/REPLACE_WITH_DBPASSWORD/${DBRootPassword}/g' /var/www/html/index.php
+
     Metadata:
       AWS::CloudFormation::Init:
         configSets:
@@ -49,11 +70,22 @@ Resources:
           packages:
             yum:
               httpd: []
+              php: []
+              mysql: []
+              mysql-server: []
+              mysql-libs: []
+              php-mysql: []
         service-init:
+          sources:
+            /var/www/html: "https://s3.amazonaws.com/cloudformation-examples/CloudFormationPHPSample.zip"
           files:
-            "/var/www/html/index.html":
-              content: "<html><body>Hello World!</body></html>"
-              mode: "000644"
+            "/tmp/setup.mysql":
+              content: !Sub |
+                CREATE DATABASE ${DBName};
+                CREATE USER '${DBUser}'@'localhost' IDENTIFIED BY '${DBPassword}';
+                GRANT ALL ON ${DBName}.* TO '${DBUser}'@'localhost';
+                FLUSH PRIVILEGES;
+              mode: "000400"
               owner: root
               group: root
           services:
@@ -61,14 +93,11 @@ Resources:
               httpd:
                 enabled: true
                 ensureRunning: true
+              mysqld:
+                enabled: true
+                ensureRunning: true
 
 Outputs:
   WebsiteURL:
     Description: Visit the HTTP site over here
-    Value: !Sub http://${WebServer.PublicDnsName}
-  PublicDNS:
-    Description: Public DNS of the newly created EC2 instance
-    Value:
-      Fn::GetAtt:
-        - WebServer
-        - PublicDnsName
+    Value: !Sub http://${WebServer.PublicDnsName}/index.php
