@@ -49,23 +49,15 @@ Resources:
         "Fn::Base64": !Sub |
           #!/bin/bash -ex
           /opt/aws/bin/cfn-init --stack ${AWS::StackName} --resource WebServer --configsets install-and-init --region ${AWS::Region}
-          chmod a+r /var/www/html/index.php
-
-          # Setup MySQL, create a user and a database
-          mysqladmin -u root password ${DBRootPassword}
-          mysql -u root --password='${DBRootPassword}' < /tmp/setup.mysql
-
-          # Configure the PHP application - in this case, fixup the page with the right references to the database
-          sed -i 's/REPLACE_WITH_DATABASE/localhost/g' /var/www/html/index.php
-          sed -i 's/REPLACE_WITH_DBUSER/root/g' /var/www/html/index.php
-          sed -i 's/REPLACE_WITH_DBPASSWORD/${DBRootPassword}/g' /var/www/html/index.php
 
     Metadata:
       AWS::CloudFormation::Init:
         configSets:
           install-and-init:
             - install-packages
+            - service-config
             - service-init
+            - configure-services
         install-packages:
           packages:
             yum:
@@ -75,9 +67,9 @@ Resources:
               mysql-server: []
               mysql-libs: []
               php-mysql: []
-        service-init:
           sources:
-            /var/www/html: "https://s3.amazonaws.com/cloudformation-examples/CloudFormationPHPSample.zip"
+            /var/www/html: "http://wordpress.org/latest.tar.gz"
+        service-config:
           files:
             "/tmp/setup.mysql":
               content: !Sub |
@@ -88,6 +80,17 @@ Resources:
               mode: "000400"
               owner: root
               group: root
+            "/tmp/create-wp-config":
+              content: !Sub |
+                #!/bin/bash -ex
+                cp /var/www/html/wordpress/wp-config-sample.php /var/www/html/wordpress/wp-config.php
+                sed -i 's/database_name_here/${DBName}/g' /var/www/html/wordpress/wp-config.php
+                sed -i 's/username_here/${DBUser}/g' /var/www/html/wordpress/wp-config.php
+                sed -i 's/password_here/${DBPassword}/g' /var/www/html/wordpress/wp-config.php
+              mode: 000500
+              owner: root
+              group: root
+        service-init:
           services:
             sysvinit:
               httpd:
@@ -96,8 +99,18 @@ Resources:
               mysqld:
                 enabled: true
                 ensureRunning: true
+        configure-services:
+          commands:
+            01_set_mysql_root_password:
+              command: !Sub mysqladmin -u root password ${DBRootPassword}
+              test: !Sub $(mysql ${DBName} -u root --password='${DBRootPassword}' >/dev/null 2>&1 </dev/null); (( $? != 0 ))
+            02_create_database:
+              command: !Sub mysql -u root --password='${DBRootPassword}' < /tmp/setup.mysql
+              test: !Sub $(mysql ${DBName} -u root --password='${DBRootPassword}' >/dev/null 2>&1 </dev/null); (( $? != 0 ))
+            03_configure_wordpress:
+              command: "/tmp/create-wp-config"
 
 Outputs:
   WebsiteURL:
     Description: Visit the HTTP site over here
-    Value: !Sub http://${WebServer.PublicDnsName}/index.php
+    Value: !Sub http://${WebServer.PublicDnsName}/wordpress
