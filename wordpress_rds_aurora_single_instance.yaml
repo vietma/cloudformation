@@ -1,0 +1,125 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: WordPress single instance template
+Parameters:
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+  InstanceType:
+    Type: String
+    Default: t2.micro
+  Vpc:
+    Type: AWS::EC2::VPC::Id
+  DBName:
+    Type: String
+    Default: wordpressdb
+  DBUser:
+    Type: String
+    Default: dbAdmin
+  DBPassword:
+    Type: String
+    NoEcho: true
+  DBClass:
+    Type: String
+    Default: db.t2.small
+
+Resources:
+  WebServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable HTTP access via port 80
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+      VpcId: !Ref Vpc
+  WebServer:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: ami-09b42976632b27e9b
+      KeyName: !Ref KeyName
+      SecurityGroupIds:
+        - !Ref WebServerSecurityGroup
+      UserData: # very important
+        "Fn::Base64": !Sub |
+          #!/bin/bash -ex
+          /opt/aws/bin/cfn-init --stack ${AWS::StackName} --resource WebServer --configsets install-and-init --region ${AWS::Region}
+
+    Metadata:
+      AWS::CloudFormation::Init:
+        configSets:
+          install-and-init:
+            - install-packages
+            - service-config
+            - service-init
+            - configure-services
+        install-packages:
+          packages:
+            yum:
+              httpd: []
+              php: []
+              mysql: []
+              php-mysql: []
+
+          sources:
+            /var/www/html: "http://wordpress.org/latest.tar.gz"
+        service-config:
+          files:
+            "/tmp/create-wp-config":
+              content: !Sub |
+                #!/bin/bash -ex
+                cp /var/www/html/wordpress/wp-config-sample.php /var/www/html/wordpress/wp-config.php
+                sed -i 's/database_name_here/${DBName}/g' /var/www/html/wordpress/wp-config.php
+                sed -i 's/username_here/${DBUser}/g' /var/www/html/wordpress/wp-config.php
+                sed -i 's/password_here/${DBPassword}/g' /var/www/html/wordpress/wp-config.php
+                sed -i 's/localhost/${DBCluster.Endpoint.Address}/g' /var/www/html/wordpress/wp-config.php
+              mode: 000500
+              owner: root
+              group: root
+        service-init:
+          services:
+            sysvinit:
+              httpd:
+                enabled: true
+                ensureRunning: true
+
+        configure-services:
+          commands:
+            01_configure_wordpress:
+              command: "/tmp/create-wp-config"
+  DBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Open database for access
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          CidrIp: 0.0.0.0/0
+      VpcId: !Ref Vpc
+
+  DBCluster:
+    Type: AWS::RDS::DBCluster
+    Properties:
+      Engine: aurora
+      DatabaseName: !Ref DBName
+      MasterUsername: !Ref DBUser
+      MasterUserPassword: !Ref DBPassword
+      VpcSecurityGroupIds:
+        - !Ref DBSecurityGroup
+
+  DBInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      Engine: aurora
+      DBClusterIdentifier: !Ref DBCluster
+      DBInstanceClass: !Ref DBClass
+
+Outputs:
+  WebsiteURL:
+    Description: WordPress website url
+    Value: !Sub http://${WebServer.PublicDnsName}/wordpress
