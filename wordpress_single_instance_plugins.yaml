@@ -120,6 +120,9 @@ Resources:
                 cd /var/www/html/wordpress/wp-content/plugins
                 curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
                 chmod +x wp-cli.phar
+                mv wp-cli.phar /usr/local/bin/wp
+
+                #Must startup WordPress and create admin user and password first before running the following plugin install
 
                 wp plugin install user-switching --activate --allow-root
                 wp plugin install contact-form-7 --activate --allow-root
