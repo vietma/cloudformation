@@ -8,12 +8,6 @@ Parameters:
     Default: t2.micro
   Vpc:
     Type: AWS::EC2::VPC::Id
-  DBRootPassword:
-    Type: String
-    NoEcho: true
-    MinLength: 8
-    MaxLength: 41
-    Description: Root password for MySQL
   DBName:
     Type: String
     Default: wordpressdb
@@ -23,6 +17,14 @@ Parameters:
   DBPassword:
     Type: String
     NoEcho: true
+  DBClass:
+    Type: String
+    Default: db.t2.small
+  DBAllocatedStorage:
+    Type: Number
+    Default: 5
+    MinValue: 5
+    MaxValue: 1024
 
 Resources:
   WebServerSecurityGroup:
@@ -66,22 +68,12 @@ Resources:
               httpd: []
               php: []
               mysql: []
-              mysql-server: []
-              mysql-libs: []
               php-mysql: []
+
           sources:
             /var/www/html: "http://wordpress.org/latest.tar.gz"
         service-config:
           files:
-            "/tmp/setup.mysql":
-              content: !Sub |
-                CREATE DATABASE ${DBName};
-                CREATE USER '${DBUser}'@'localhost' IDENTIFIED BY '${DBPassword}';
-                GRANT ALL ON ${DBName}.* TO '${DBUser}'@'localhost';
-                FLUSH PRIVILEGES;
-              mode: "000400"
-              owner: root
-              group: root
             "/tmp/create-wp-config":
               content: !Sub |
                 #!/bin/bash -ex
@@ -89,6 +81,7 @@ Resources:
                 sed -i 's/database_name_here/${DBName}/g' /var/www/html/wordpress/wp-config.php
                 sed -i 's/username_here/${DBUser}/g' /var/www/html/wordpress/wp-config.php
                 sed -i 's/password_here/${DBPassword}/g' /var/www/html/wordpress/wp-config.php
+                sed -i 's/localhost/${DBInstance.Endpoint.Address}/g' /var/www/html/wordpress/wp-config.php
               mode: 000500
               owner: root
               group: root
@@ -98,19 +91,32 @@ Resources:
               httpd:
                 enabled: true
                 ensureRunning: true
-              mysqld:
-                enabled: true
-                ensureRunning: true
+
         configure-services:
           commands:
-            01_set_mysql_root_password:
-              command: !Sub mysqladmin -u root password ${DBRootPassword}
-              test: !Sub $(mysql ${DBName} -u root --password='${DBRootPassword}' >/dev/null 2>&1 </dev/null); (( $? != 0 ))
-            02_create_database:
-              command: !Sub mysql -u root --password='${DBRootPassword}' < /tmp/setup.mysql
-              test: !Sub $(mysql ${DBName} -u root --password='${DBRootPassword}' >/dev/null 2>&1 </dev/null); (( $? != 0 ))
-            03_configure_wordpress:
+            01_configure_wordpress:
               command: "/tmp/create-wp-config"
+  DBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Open database for access
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          CidrIp: 0.0.0.0/0
+      VpcId: !Ref Vpc
+  DBInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      Engine: MySQL
+      DBName: !Ref DBName
+      MasterUsername: !Ref DBUser
+      MasterUserPassword: !Ref DBPassword
+      DBInstanceClass: !Ref DBClass
+      AllocatedStorage: !Ref DBAllocatedStorage
+      VPCSecurityGroups:
+        - !Ref DBSecurityGroup
 
 Outputs:
   WebsiteURL:

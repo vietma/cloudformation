@@ -16,10 +16,8 @@ Parameters:
     Description: Root password for MySQL
   DBName:
     Type: String
-    Default: wordpressdb
   DBUser:
     Type: String
-    Default: dbAdmin
   DBPassword:
     Type: String
     NoEcho: true
