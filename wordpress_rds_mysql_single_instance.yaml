@@ -120,5 +120,5 @@ Resources:
 
 Outputs:
   WebsiteURL:
-    Description: Visit the HTTP site over here
+    Description: WordPress website url
     Value: !Sub http://${WebServer.PublicDnsName}/wordpress
