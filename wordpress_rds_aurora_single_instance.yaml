@@ -16,10 +16,24 @@ Parameters:
     Default: dbAdmin
   DBPassword:
     Type: String
+    Default: passw0rd
     NoEcho: true
   DBClass:
     Type: String
     Default: db.t2.small
+  BlogTitle:
+    Type: String
+    Default: WP with pre-installed plugins
+  BlogAdminUsername:
+    Type: String
+    Default: admin
+  BlogAdminPassword:
+    Type: String
+    NoEcho: true
+    Default: passw0rd
+  BlogAdminEMail:
+    Type: String
+    Default: admin@example.com
 
 Resources:
   WebServerSecurityGroup:
@@ -57,13 +71,14 @@ Resources:
             - service-config
             - service-init
             - configure-services
+            - create-wp-cli-script
         install-packages:
           packages:
             yum:
-              httpd: []
-              php: []
+              httpd24: []
+              php54: []
               mysql: []
-              php-mysql: []
+              php54-mysql: []
 
           sources:
             /var/www/html: "http://wordpress.org/latest.tar.gz"
@@ -91,6 +106,38 @@ Resources:
           commands:
             01_configure_wordpress:
               command: "/tmp/create-wp-config"
+        create-wp-cli-script:
+          files:
+            "/tmp/install-wp-cli":
+              content: !Sub |
+                #!/bin/bash -ex
+                cd /var/www/html/wordpress/wp-content/plugins
+
+                wget -q -T 60 https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
+
+                chmod +x wp-cli.phar
+                mv wp-cli.phar /usr/local/bin/wp
+
+                #Must setup WordPress and create admin user and password first before running the following plugin install
+                wp core install --url='http://<PublicDnsName>/wordpress/wp-admin/install.php' --title='${BlogTitle}' --admin_user='${BlogAdminUsername}' --admin_password='${BlogAdminPassword}' --admin_email='${BlogAdminEMail}' --skip-email --allow-root
+                      
+                wp plugin install user-switching --activate --allow-root
+                wp plugin install contact-form-7 --activate --allow-root
+                wp plugin install duplicate-page --activate --allow-root
+                wp plugin install enable-media-replace --activate --allow-root
+                wp plugin install post-tags-and-categories-for-pages --activate --allow-root
+                wp plugin install redirection --activate --allow-root
+                wp plugin install relevanssi --activate --allow-root
+                wp plugin install wp-extra-file-types --activate --allow-root
+                #so many WPBakery Page Builder plugins. Need to be more specific
+                #wp plugin install wpbakery-page-builder --activate --allow-root
+                #Slider Revolution plugin does not exist
+                #wp plugin install slider-revolution --activate --allow-root
+
+              mode: 000500
+              owner: root
+              group: root
+
   DBSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:

@@ -10,6 +10,7 @@ Parameters:
     Type: AWS::EC2::VPC::Id
   DBRootPassword:
     Type: String
+    Default: passw0rd
     NoEcho: true
     MinLength: 8
     MaxLength: 41
@@ -22,7 +23,21 @@ Parameters:
     Default: dbAdmin
   DBPassword:
     Type: String
+    Default: passw0rd
     NoEcho: true
+  BlogTitle:
+    Type: String
+    Default: WP with pre-installed plugins
+  BlogAdminUsername:
+    Type: String
+    Default: admin
+  BlogAdminPassword:
+    Type: String
+    NoEcho: true
+    Default: passw0rd
+  BlogAdminEMail:
+    Type: String
+    Default: admin@example.com
 
 Resources:
   WebServerSecurityGroup:
@@ -60,16 +75,16 @@ Resources:
             - service-config
             - service-init
             - configure-services
-            - install-wordpress-plugins
+            - create-wp-cli-script
         install-packages:
           packages:
             yum:
-              httpd24: []
-              php54: [] # PHP 5.4 is the minimum requirement of wp-cli
+              httpd24: [] #httpd24: [] if version 2.4 is required
+              php54: [] #php54: [] if version 5.4 is required
               mysql: []
               mysql-server: []
               mysql-libs: []
-              php54-mysql: []
+              php54-mysql: [] #php54-mysql: [] if PHP version 5.4 was installed
           sources:
             /var/www/html: "http://wordpress.org/latest.tar.gz"
         service-config:
@@ -112,18 +127,22 @@ Resources:
               test: !Sub $(mysql ${DBName} -u root --password='${DBRootPassword}' >/dev/null 2>&1 </dev/null); (( $? != 0 ))
             03_configure_wordpress:
               command: "/tmp/create-wp-config"
-        install-wordpress-plugins:
+        create-wp-cli-script:
           files:
             "/tmp/install-wp-cli":
               content: !Sub |
                 #!/bin/bash -ex
                 cd /var/www/html/wordpress/wp-content/plugins
-                curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
+
+                wget -q -T 60 https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
+                #curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
+
                 chmod +x wp-cli.phar
                 mv wp-cli.phar /usr/local/bin/wp
 
-                #Must startup WordPress and create admin user and password first before running the following plugin install
-
+                #Must setup WordPress and create admin user and password first before running the following plugin install
+                wp core install --url='http://<PublicDnsName>/wordpress/wp-admin/install.php' --title='${BlogTitle}' --admin_user='${BlogAdminUsername}' --admin_password='${BlogAdminPassword}' --admin_email='${BlogAdminEMail}' --skip-email --allow-root
+                      
                 wp plugin install user-switching --activate --allow-root
                 wp plugin install contact-form-7 --activate --allow-root
                 wp plugin install duplicate-page --activate --allow-root
@@ -140,10 +159,9 @@ Resources:
               mode: 000500
               owner: root
               group: root
-
-          commands:
-            01_install_wp_plugins:
-              command: "/tmp/install-wp-cli"
+          #commands:
+          #01_install_wp_plugins:
+          #command: "/tmp/install-wp-cli"
 
 Outputs:
   WebsiteURL:
