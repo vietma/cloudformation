@@ -1,0 +1,129 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Install WordPress using Docker template
+Parameters:
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+  InstanceType:
+    Type: String
+    Default: t2.micro
+  Vpc:
+    Type: AWS::EC2::VPC::Id
+  DBRootPassword:
+    Type: String
+    Default: passw0rd
+    NoEcho: true
+    MinLength: 8
+    MaxLength: 41
+    Description: Root password for MySQL
+  DBName:
+    Type: String
+    Default: wordpressdb
+  DBUser:
+    Type: String
+    Default: dbAdmin
+  DBPassword:
+    Type: String
+    Default: passw0rd
+    NoEcho: true
+
+Resources:
+  WebServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable HTTP access via port 80
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+      VpcId: !Ref Vpc
+  WebServer:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: ami-09b42976632b27e9b
+      KeyName: !Ref KeyName
+      SecurityGroupIds:
+        - !Ref WebServerSecurityGroup
+      UserData: # very important
+        "Fn::Base64": !Sub |
+          #!/bin/bash -ex
+          /opt/aws/bin/cfn-init --stack ${AWS::StackName} --resource WebServer --configsets install-and-init --region ${AWS::Region}
+          #docker-compose -f /tmp/docker-compose.yaml up -d
+    Metadata:
+      AWS::CloudFormation::Init:
+        configSets:
+          install-and-init:
+            - install-packages
+            - service-config
+            - configure-services
+        install-packages:
+          packages:
+            yum:
+              docker: []
+          commands:
+            01_install_docker_compose:
+              command: "pip install docker-compose"
+
+        service-config:
+          files:
+            "/tmp/docker-compose.yaml":
+              content: !Sub |
+                version: '3.3'
+                services:
+                  wp_db:
+                    image: mysql:5.7
+                    volumes:
+                      - "./.data/db:/var/lib/mysql"
+                    restart: always
+                    environment:
+                      MYSQL_ROOT_PASSWORD: ${DBRootPassword}
+                      MYSQL_DATABASE: ${DBName}
+                      MYSQL_USER: ${DBUser}
+                      MYSQL_PASSWORD: ${DBPassword}
+
+                  wordpress:
+                    depends_on:
+                      - wp_db
+                    image: wordpress:latest
+                    volumes:
+                      - "./wp:/var/www/html"
+                    links:
+                      - wp_db:mysql
+                    ports:
+                      - "80:80"
+                    restart: always
+                    environment:
+                      WORDPRESS_DB_NAME: ${DBName}
+                      WORDPRESS_DB_USER: ${DBUser}
+                      WORDPRESS_DB_PASSWORD: ${DBPassword}
+
+              mode: 000500
+              owner: root
+              group: root
+            "/tmp/run-docker-compose":
+              content: !Sub |
+                #!/bin/bash -ex
+                service docker start
+                docker-compose -f /tmp/docker-compose.yaml up -d
+
+              mode: 000500
+              owner: root
+              group: root
+        configure-services:
+          commands:
+            01_start_docker_service:
+              command: "service docker start"
+            02_run_docker_compose:
+              command: "docker-compose -f /tmp/docker-compose.yaml up -d" # This command is NOT running for some unknown reasons!!
+            #01_run_docker_compose:
+            #  command: "/tmp/run-docker-compose"
+
+Outputs:
+  WebsiteURL:
+    Description: Visit the HTTP site over here
+    Value: !Sub http://${WebServer.PublicDnsName}/wordpress
