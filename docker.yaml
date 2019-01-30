@@ -55,7 +55,9 @@ Resources:
           install-and-init:
             - install-packages
             - service-init
-            - service-config
+            - configure-maven
+            - download-java
+            - configure-java
             - configure-services
         install-packages:
           packages:
@@ -67,10 +69,10 @@ Resources:
             01-install-docker-compose:
               command: "pip install docker-compose"
               # test: "echo $(/usr/local/bin/docker-compose -v) > /tmp/docker_compose_version.txt"
-            02-mkdir-maven:
-              command: "sudo mkdir /opt/maven"
-            03-mkdir-java:
-              command: "sudo mkdir /opt/java"
+            # 02-mkdir-maven:
+            # command: "sudo mkdir /opt/maven"
+            # 03-mkdir-java:
+            # command: "sudo mkdir /opt/java"
 
         service-init:
           services:
@@ -79,28 +81,55 @@ Resources:
                 enabled: true
                 ensureRunning: true
 
-        service-config:
+        configure-maven:
           sources:
-            /opt/maven: "http://apache.mirror.amaze.com.au/maven/maven-3/3.6.0/binaries/apache-maven-3.6.0-bin.tar.gz"
+            /opt: "http://apache.mirror.amaze.com.au/maven/maven-3/3.6.0/binaries/apache-maven-3.6.0-bin.tar.gz"
 
           files:
             "/etc/profile.d/maven.sh":
               content: !Sub |
                 #!/bin/bash -ex
-                export M2_HOME=/opt/maven/apache-maven-3.6.0
+                export M2_HOME=/opt/apache-maven-3.6.0
                 export PATH=${!M2_HOME}/bin:${!PATH}
               mode: 000400
               owner: root
               group: root
 
-          # sources:
-          # /opt/java: "https://download.oracle.com/otn-pub/java/jdk/8u201-b09/42970487e3af4f5aa5bca3f542482c60/jdk-8u201-linux-x64.tar.gz"
+        download-java:
+          files:
+            "/tmp/download-java":
+              content: !Sub |
+                #!/bin/bash -ex
+                cd /opt/
+                wget --no-cookies --no-check-certificate --header "Cookie: gpw_e24=http%3A%2F%2Fwww.oracle.com%2F; oraclelicense=accept-securebackup-cookie" "https://download.oracle.com/otn-pub/java/jdk/8u201-b09/42970487e3af4f5aa5bca3f542482c60/jdk-8u201-linux-x64.tar.gz"
+                tar xzf jdk-8u201-linux-x64.tar.gz
+              mode: 000400
+              owner: root
+              group: root
+          commands:
+            01-download-java:
+              command: "/tmp/download-java"
+
+        configure-java:
+          files:
+            "/etc/profile.d/java.sh":
+              content: !Sub |
+                #!/bin/bash -ex
+                export JAVA_HOME=/opt/jdk1.8.0_201
+                export PATH=${!JAVA_HOME}/bin:${!PATH}
+              mode: 000400
+              owner: root
+              group: root
 
         configure-services:
           commands:
             01-install-maven:
               command: "source /etc/profile.d/maven.sh"
               test: "echo $(/opt/apache-maven-3.6.0/bin/mvn -version) > /tmp/maven-version.txt"
+            02-install-java:
+              command: "source /etc/profile.d/java.sh"
+            03-remove-java-bundle:
+              command: "rm /opt/jdk-8u201-linux-x64.tar.gz"
 
 Outputs:
   WebsiteURL:
