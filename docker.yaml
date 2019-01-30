@@ -134,4 +134,4 @@ Resources:
 Outputs:
   WebsiteURL:
     Description: Visit the HTTP site over here
-    Value: !Sub http://${WebServer.PublicDnsName}/8010
+    Value: !Sub http://${WebServer.PublicDnsName}:8010
