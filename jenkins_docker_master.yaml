@@ -1,0 +1,141 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Install Docker and Docker Compose template
+Parameters:
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+  InstanceType:
+    Type: String
+    Default: t2.micro
+  Vpc:
+    Type: AWS::EC2::VPC::Id
+
+Resources:
+  WebServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable HTTP access via port 80
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 8010
+          ToPort: 8010
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 8020
+          ToPort: 8020
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 8030
+          ToPort: 8030
+          CidrIp: 0.0.0.0/0
+      VpcId: !Ref Vpc
+  WebServer:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: ami-09b42976632b27e9b
+      KeyName: !Ref KeyName
+      SecurityGroupIds:
+        - !Ref WebServerSecurityGroup
+      UserData: # very important
+        "Fn::Base64": !Sub |
+          #!/bin/bash -ex
+          /opt/aws/bin/cfn-init --stack ${AWS::StackName} --resource WebServer --configsets install-and-init --region ${AWS::Region}
+
+    Metadata:
+      AWS::CloudFormation::Init:
+        configSets:
+          install-and-init:
+            - install-packages
+            - service-init
+            - configure-maven
+            - download-java
+            - configure-java
+            - configure-services
+        install-packages:
+          packages:
+            yum:
+              docker: []
+              git: []
+
+          commands:
+            01-install-docker-compose:
+              command: "pip install docker-compose"
+              # test: "echo $(/usr/local/bin/docker-compose -v) > /tmp/docker_compose_version.txt"
+            # 02-mkdir-maven:
+            # command: "sudo mkdir /opt/maven"
+            # 03-mkdir-java:
+            # command: "sudo mkdir /opt/java"
+
+        service-init:
+          services:
+            sysvinit:
+              docker:
+                enabled: true
+                ensureRunning: true
+
+        configure-maven:
+          sources:
+            /opt: "http://apache.mirror.amaze.com.au/maven/maven-3/3.6.0/binaries/apache-maven-3.6.0-bin.tar.gz"
+
+          files:
+            "/etc/profile.d/maven.sh":
+              content: !Sub |
+                #!/bin/bash -ex
+                export M2_HOME=/opt/apache-maven-3.6.0
+                export PATH=${!M2_HOME}/bin:${!PATH}
+              mode: 000400
+              owner: root
+              group: root
+
+        download-java:
+          files:
+            "/tmp/download-java":
+              content: !Sub |
+                #!/bin/bash -ex
+                cd /opt/
+                wget --no-cookies --no-check-certificate --header "Cookie: gpw_e24=http%3A%2F%2Fwww.oracle.com%2F; oraclelicense=accept-securebackup-cookie" "https://download.oracle.com/otn-pub/java/jdk/8u201-b09/42970487e3af4f5aa5bca3f542482c60/jdk-8u201-linux-x64.tar.gz"
+                tar xzf jdk-8u201-linux-x64.tar.gz
+              mode: 000400
+              owner: root
+              group: root
+          commands:
+            01-download-java:
+              command: "/tmp/download-java"
+
+        configure-java:
+          files:
+            "/etc/profile.d/java.sh":
+              content: !Sub |
+                #!/bin/bash -ex
+                export JAVA_HOME=/opt/jdk1.8.0_201
+                export PATH=${!JAVA_HOME}/bin:${!PATH}
+              mode: 000400
+              owner: root
+              group: root
+
+        configure-services:
+          commands:
+            01-install-maven:
+              command: "source /etc/profile.d/maven.sh"
+              test: "echo $(/opt/apache-maven-3.6.0/bin/mvn -version) > /tmp/maven-version.txt"
+            02-install-java:
+              command: "source /etc/profile.d/java.sh"
+            03-remove-java-bundle:
+              command: "rm /opt/jdk-8u201-linux-x64.tar.gz"
+
+Outputs:
+  WebsiteURL:
+    Description: Visit the HTTP site over here
+    Value: !Sub http://${WebServer.PublicDnsName}:8080
