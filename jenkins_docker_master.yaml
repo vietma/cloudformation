@@ -81,9 +81,10 @@ Resources:
         install-jenkins-docker:
           commands:
             01-prepare-jenkins-volume:
-              command: "mkdir $HOME/jenkins_home"
+              command: "mkdir /root/jenkins_home"
             02-run-jenkins-container:
               command: "docker run -d -p 8010:8080 -v jenkins_home:/var/jenkins_home --name jenkins jenkins:2.60.1"
+              # For some unknown reason, jenkins home is located at /var/lib/docker/volumes/jenkins_home/_data/secrets in the host server
 
 Outputs:
   jenkinsURL:
