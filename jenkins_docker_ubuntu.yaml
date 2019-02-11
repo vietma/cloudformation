@@ -63,10 +63,10 @@ Resources:
           install-and-init:
             - install-packages
             - service-init
-            - configure-maven
-            - download-java
-            - configure-java
-            - configure-services
+            # - configure-maven
+            # - download-java
+            # - configure-java
+            # - configure-services
         install-packages:
           packages:
             apt:

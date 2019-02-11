@@ -59,6 +59,9 @@ Resources:
           install-and-init:
             - install-packages
             - service-init
+            - download-java
+            - configure-java
+            - install-java
             - install-jenkins-docker
         install-packages:
           packages:
@@ -78,12 +81,45 @@ Resources:
                 enabled: true
                 ensureRunning: true
 
+        download-java:
+          files:
+            "/tmp/download-java":
+              content: !Sub |
+                #!/bin/bash -ex
+                cd /opt/
+                wget --no-cookies --no-check-certificate --header "Cookie: gpw_e24=http%3A%2F%2Fwww.oracle.com%2F; oraclelicense=accept-securebackup-cookie" "https://download.oracle.com/otn-pub/java/jdk/8u201-b09/42970487e3af4f5aa5bca3f542482c60/jdk-8u201-linux-x64.tar.gz"
+                tar xzf jdk-8u201-linux-x64.tar.gz
+              mode: 000400
+              owner: root
+              group: root
+          commands:
+            01-download-java:
+              command: "/tmp/download-java"
+
+        configure-java:
+          files:
+            "/etc/profile.d/java.sh":
+              content: !Sub |
+                #!/bin/bash -ex
+                export JAVA_HOME=/opt/jdk1.8.0_201
+                export PATH=${!JAVA_HOME}/bin:${!PATH}
+              mode: 000400
+              owner: root
+              group: root
+
+        install-java:
+          commands:
+            01-install-java:
+              command: "source /etc/profile.d/java.sh"
+            02-remove-java-bundle:
+              command: "rm /opt/jdk-8u201-linux-x64.tar.gz"
+
         install-jenkins-docker:
           commands:
             01-prepare-jenkins-volume:
-              command: "mkdir /root/jenkins_home"
+              command: "docker volume create jenkins-data"
             02-run-jenkins-container:
-              command: "docker run -d -p 8010:8080 -v jenkins_home:/var/jenkins_home --name jenkins jenkins:2.60.1"
+              command: "docker run -d -p 8010:8080 -v jenkins-data:/var/jenkins_home --name jenkins-master jenkins/jenkins:2.163"
               # For some unknown reason, jenkins home is located at /var/lib/docker/volumes/jenkins_home/_data/secrets in the host server
 
 Outputs:
