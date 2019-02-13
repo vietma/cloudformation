@@ -121,4 +121,4 @@ Resources:
 Outputs:
   jenkinsURL:
     Description: visit jenkins site over here
-    Value: !Sub http://${WebServer.PublicDnsName}:8080
+    Value: !Sub http://${WebServer.PublicDnsName}
