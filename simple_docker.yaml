@@ -3,11 +3,12 @@ Description: Install Docker and Docker Compose template
 Parameters:
   KeyName:
     Type: AWS::EC2::KeyPair::KeyName
+    Default: phoenix
   InstanceType:
     Type: String
     Default: t2.micro
-  Vpc:
-    Type: AWS::EC2::VPC::Id
+  # Vpc:
+  # Type: AWS::EC2::VPC::Id
 
 Resources:
   WebServerSecurityGroup:
@@ -43,7 +44,7 @@ Resources:
           FromPort: 50000
           ToPort: 50000
           CidrIp: 0.0.0.0/0
-      VpcId: !Ref Vpc
+      # VpcId: !Ref Vpc
   WebServer:
     Type: AWS::EC2::Instance
     Properties:
